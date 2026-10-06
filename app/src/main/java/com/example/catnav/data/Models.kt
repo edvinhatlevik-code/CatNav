@@ -1,0 +1,100 @@
+package com.example.catnav.data
+
+data class Tracker(
+    val trackerId: Long,
+    val state: String = "UNKNOWN",
+    val batteryMillivolts: Int? = null,
+    val lowBatteryLockout: Boolean = false,
+    val rssi: Int? = null,
+    val snr: Double? = null,
+    val lastSeenAtMs: Long? = null,
+    val lastSyncAtMs: Long? = null,
+    val lastFetchRequestedAtMs: Long? = null,
+    val registered: Boolean = true,
+    val chargeNotificationSent: Boolean = false
+) {
+    val isActive: Boolean
+        get() = registered && (
+            state.equals("ACTIVE", ignoreCase = true) ||
+                state.equals("AWAKE", ignoreCase = true)
+            )
+}
+
+data class LocationRecord(
+    val trackerId: Long,
+    val recordSequence: Long,
+    val utcSeconds: Long,
+    val latitudeE7: Int,
+    val longitudeE7: Int,
+    val receivedAtMs: Long
+) {
+    val latitude: Double
+        get() = latitudeE7 / 10_000_000.0
+
+    val longitude: Double
+        get() = longitudeE7 / 10_000_000.0
+
+    val timestampMs: Long
+        get() = if (utcSeconds > 0L) utcSeconds * 1000L else receivedAtMs
+}
+
+data class GatewayJob(
+    val jobId: String,
+    val trackerId: Long,
+    val command: String,
+    val status: String,
+    val detail: String?,
+    val partial: Boolean = false,
+    val pendingRecords: Long? = null,
+    val acknowledgedChunks: Long? = null,
+    val createdAtMs: Long,
+    val handled: Boolean = false
+) {
+    val isTerminal: Boolean
+        get() = status in setOf("COMPLETED", "FAILED", "TIMED_OUT")
+}
+
+data class TrackerSetting(
+    val id: Int,
+    val key: String,
+    val title: String,
+    val unit: String,
+    val minimum: Long,
+    val maximum: Long,
+    val defaultApiValue: Long,
+    val apiSecondsPerDisplayUnit: Long = 1L
+) {
+    fun displayValue(apiValue: Long): Long = apiValue / apiSecondsPerDisplayUnit
+
+    fun apiValue(displayValue: Long): Long = displayValue * apiSecondsPerDisplayUnit
+}
+
+object TrackerSettings {
+    val all = listOf(
+        TrackerSetting(1, "sampleInterval", "Sample interval", "min", 1, 127, 60, 60),
+        TrackerSetting(2, "autoSleep", "Auto-sleep after inactivity", "min", 1, 127, 1_800, 60),
+        TrackerSetting(3, "gpsTimeout", "GPS standby wake timeout", "sec", 5, 120, 45),
+        TrackerSetting(4, "batteryInterval", "Battery check interval", "min", 1, 255, 3_600, 60),
+        TrackerSetting(5, "distanceThreshold", "Minimum movement", "m", 0, 127, 20),
+        TrackerSetting(6, "criticalBattery", "Critical battery voltage", "mV", 3_000, 4_200, 3_300),
+        TrackerSetting(7, "txPower", "Transmit power", "dBm", 2, 10, 10),
+        TrackerSetting(8, "dormantSleep", "Dormant radio-off interval", "min", 1, 59, 900, 60),
+        TrackerSetting(9, "radioListen", "Dormant listen window", "sec", 3, 30, 6)
+    )
+
+    fun byId(id: Int): TrackerSetting? = all.firstOrNull { it.id == id }
+
+    fun validConfiguration(values: Map<Int, Long>): Boolean {
+        for (setting in all) {
+            val apiValue = values[setting.id] ?: setting.defaultApiValue
+            val displayValue = setting.displayValue(apiValue)
+            if (displayValue !in setting.minimum..setting.maximum) return false
+            if (setting.apiSecondsPerDisplayUnit > 1 && apiValue % setting.apiSecondsPerDisplayUnit != 0L) {
+                return false
+            }
+        }
+        val dormantSeconds = values[8] ?: 900L
+        val listenSeconds = values[9] ?: 6L
+        return listenSeconds < dormantSeconds
+    }
+}
