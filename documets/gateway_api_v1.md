@@ -68,9 +68,13 @@ Supported commands are `WAKE`, `SLEEP`, `FETCH`, `GET_CONFIG`, and
 `gateway_protocol.md`. API values for setting IDs 1, 2, 4, and 8 are in
 seconds (and must be whole minutes); the gateway converts them to the protocol's
 minute-valued wire representation. Other API setting values use the units in
-the protocol document. Jobs are processed one at a time. A sleeping tracker
-may take multiple 15-minute receive windows to respond, so poll its job
-endpoint; do not assume `202 Accepted` means the radio command completed.
+the protocol document. Jobs are processed one at a time. To issue a non-WAKE
+command to a dormant tracker, queue `WAKE` first. The gateway retries `WAKE`
+every 5 seconds for up to 1 hour, subject to its airtime limiter. Non-WAKE
+commands use an active-response timeout of up to 10 seconds; they do not wait
+for a future receive window. If one times out, wait for WAKE to complete, then
+submit the command again. Poll the job endpoint; do not assume `202 Accepted`
+means the radio command completed.
 
 Job status values are `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, and
 `TIMED_OUT`. A completed FETCH can include `partial: true` and a non-zero
@@ -85,8 +89,8 @@ Job status values are `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, and
 2. Build and upload `heltec_wifi_lora_32_V3`. The USB serial monitor runs at
    115200 baud and reports radio initialization, Wi-Fi status, and tracker IDs.
 3. Register each tracker using its boot-printed ID and the tracker route above.
-4. Queue `GET_CONFIG` or `FETCH` for a registered tracker. A sleeping tracker
-   may need several 900-second sleep/6-second listen windows to receive a job.
+4. Queue `WAKE` for a dormant tracker and wait for it to complete before
+   queueing `GET_CONFIG`, `FETCH`, or another command.
 
 ### Charge alerts
 

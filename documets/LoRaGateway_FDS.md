@@ -47,13 +47,14 @@ The agent must provide clear configuration parameters (e.g., in `config.h` or pe
 ## 4. State & Task Management Architecture
 
 ### 4.1 Communication Controller Rules
-1. **Single-Threaded LoRa Transactions:** The gateway operates as a half-duplex, stop-and-wait controller. It must process commands for only ONE tracker at a time and block new outgoing command queues until the active transaction (e.g., `FETCH` or `SET_CONFIG`) completes or times out.
+1. **Single-Threaded LoRa Transactions:** The gateway operates as a half-duplex, stop-and-wait controller and processes commands for only ONE tracker at a time. An unacknowledged non-WAKE command must time out after the active-response window rather than holding the radio while guessing the tracker's sleep schedule. WAKE jobs take priority over queued commands. Once FETCH is acknowledged, it remains exclusive until the transfer completes or times out.
 2. **Passive Listening Mode:** When not transmitting or executing a queued command, the gateway radio must remain in continuous receive mode (RX) to capture unsolicited frames (e.g., `CHARGE_REQUEST`).
 3. **Idempotent Retries:** Command retries must reuse the exact same gateway sequence number and payload until acknowledged or timed out.
 
 ### 4.2 Dormant Tracker Handling
-* Trackers default to a sleeping schedule (6-second listen window after each 900-second radio-off interval).
-* To execute a command on a dormant tracker, the gateway scheduler must retransmit the identical command frame across configured receive windows until an `ACK` or `CONFIG_REPORT` is received, or an application-level timeout expires.
+* A missing response does not reveal whether the tracker is dormant, out of range, or experiencing packet loss. The gateway must not infer a receive-window deadline from silence.
+* Non-WAKE commands are retried at the active retry cadence for up to the 10-second active-response timeout, then reported as timed out. To command a dormant tracker, the client should WAKE it and resubmit the failed command after WAKE succeeds.
+* WAKE is retried every 5 seconds for up to 1 hour, subject to the rolling-hour regional airtime limiter. WAKE jobs are placed ahead of other queued jobs.
 
 ### 4.3 Unsolicited Alert Interception (`CHARGE_REQUEST`)
 * On receiving `CHARGE_REQUEST` (type 12):
@@ -86,11 +87,11 @@ previous v5 header format.
 
 ## 6. Asynchronous Network API Architecture
 
-To accommodate high latency and dormant sleep cycles (up to 15-minute wake gaps), the REST API exposed over Wi-Fi to the Android app must be asynchronous.
+The REST API exposed over Wi-Fi to the Android app must be asynchronous. Radio jobs return promptly with a job ID; their progress is polled independently.
 
 ### 6.1 Functional Requirements
 1. **Command Queuing:** The app can push intent jobs (e.g., `FETCH`, `SET_CONFIG`, `WAKE`, `SLEEP`) to a queue on the gateway.
-2. **Asynchronous Dispatcher:** An independent worker task picks up queued jobs, waits for the target tracker's receive window, and executes the LoRa sequence according to `gateway_protocol.md`.
+2. **Asynchronous Dispatcher:** An independent worker task picks up queued jobs and executes LoRa sequences according to `gateway_protocol.md`, applying the active-response timeout to non-WAKE commands and scheduled retries to WAKE jobs.
 3. **Job Status & State Tracking:** The API must expose job status tracking (e.g., `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `TIMED_OUT`).
 4. **Decoupled Data Retrieval:** Location records, tracker battery status, and runtime configurations must be served directly from the gateway's memory/state, independent of real-time LoRa activity.
 

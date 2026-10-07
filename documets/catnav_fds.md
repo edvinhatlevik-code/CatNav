@@ -22,7 +22,7 @@ The application allows the user to add and manage cat trackers.
 The application controls the operational state of connected devices.
 *   **Manual Control:** The application provides controls to send `WAKE` and `SLEEP` commands. The user can select one device or select multiple devices for bulk action.
 *   **User Input Requirement:** The application sends `WAKE` or `SLEEP` commands only after direct user input.
-*   **Wake Latency Handling:** A dormant device requires time up to `DORMANT_SLEEP_MINUTES` to activate. The application polls `/api/v1/jobs/{id}` to track command progress.
+*   **Wake Latency Handling:** The gateway retries `WAKE` every 5 seconds for up to one hour, subject to its airtime limiter. The application polls `/api/v1/jobs/{id}` and shows the gateway-reported job status. If a command to a dormant tracker times out, the user can wake the tracker and retry that command after `WAKE` completes.
 *   **User Notification:** When the gateway confirms that a device wakes up, the application sends a push notification to the user phone.
 
 ## 5. Data Synchronization and Database

@@ -780,12 +780,7 @@ private fun JobRow(job: GatewayJob) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("${job.command} · ${formatTrackerId(job.trackerId)}", fontWeight = FontWeight.SemiBold)
                 Text(
-                    job.detail ?: when {
-                        job.partial -> "Partial FETCH · ${job.pendingRecords ?: 0} records remain"
-                        job.status in setOf("QUEUED", "IN_PROGRESS") &&
-                            job.command in setOf("WAKE", "FETCH") -> "Waiting for the tracker receive window"
-                        else -> formatTimestamp(job.createdAtMs)
-                    },
+                    jobProgressText(job),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -802,6 +797,29 @@ private fun JobRow(job: GatewayJob) {
                 )
             }
         }
+    }
+}
+
+internal fun jobProgressText(job: GatewayJob): String {
+    val detail = job.detail
+        ?.takeIf(String::isNotBlank)
+        ?.takeUnless {
+            it.contains("waiting for", ignoreCase = true) &&
+                it.contains("receive window", ignoreCase = true)
+        }
+    if (detail != null) return detail
+    if (job.partial) return "Partial FETCH · ${job.pendingRecords ?: 0} records remain"
+
+    return when (job.status.uppercase()) {
+        "QUEUED" -> "Queued at gateway"
+        "IN_PROGRESS" -> if (job.command.equals("WAKE", ignoreCase = true)) {
+            "Gateway is attempting to wake the tracker"
+        } else {
+            "Gateway is processing the command"
+        }
+        "FAILED" -> "Gateway reported command failure"
+        "TIMED_OUT" -> "Timed out waiting for a tracker response"
+        else -> formatTimestamp(job.createdAtMs)
     }
 }
 
