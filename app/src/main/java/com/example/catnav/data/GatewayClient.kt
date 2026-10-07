@@ -211,7 +211,7 @@ class GatewayClient(private val preferences: AppPreferences) {
             connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
             readTimeout = readTimeoutMs
             instanceFollowRedirects = false
-            setRequestProperty("Authorization", token)
+            setRequestProperty("Authorization", "Bearer $token")
         }
     }
 
