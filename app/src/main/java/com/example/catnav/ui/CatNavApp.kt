@@ -556,12 +556,6 @@ internal fun BatteryMeter(millivolts: Int?, criticalMillivolts: Int, modifier: M
             color = levelColor,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "3.7 V LiPo curve · 0% at ${criticalMillivolts} mV critical",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
