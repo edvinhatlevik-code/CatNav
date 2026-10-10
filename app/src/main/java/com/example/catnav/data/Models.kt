@@ -2,6 +2,7 @@ package com.example.catnav.data
 
 data class Tracker(
     val trackerId: Long,
+    val catName: String? = null,
     val state: String = "UNKNOWN",
     val batteryMillivolts: Int? = null,
     val lowBatteryLockout: Boolean = false,
@@ -13,6 +14,10 @@ data class Tracker(
     val registered: Boolean = true,
     val chargeNotificationSent: Boolean = false
 ) {
+    val displayName: String
+        get() = catName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Tracker 0x${trackerId.toString(16).uppercase().padStart(8, '0')}"
+
     val isActive: Boolean
         get() = registered && (
             state.equals("ACTIVE", ignoreCase = true) ||

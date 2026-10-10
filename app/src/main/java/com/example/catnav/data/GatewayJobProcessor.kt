@@ -32,7 +32,9 @@ class GatewayJobProcessor(context: Context) {
         return when (job.command) {
             "WAKE" -> {
                 database.setTrackerState(job.trackerId, "ACTIVE")
-                val delivered = CatNavNotifications.trackerAwake(appContext, job.trackerId)
+                val trackerName = database.tracker(job.trackerId)?.displayName
+                    ?: Tracker(job.trackerId).displayName
+                val delivered = CatNavNotifications.trackerAwake(appContext, job.trackerId, trackerName)
                 if (!delivered) Log.w(TAG, "Tracker wake notification permission is not enabled.")
                 delivered
             }

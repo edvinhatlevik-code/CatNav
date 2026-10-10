@@ -319,7 +319,11 @@ private fun HomeScreen(
             }
         } else {
             items(state.recentJobs.take(4), key = { it.jobId }) { job ->
-                JobRow(job)
+                JobRow(
+                    job,
+                    state.trackers.firstOrNull { it.trackerId == job.trackerId }?.displayName
+                        ?: "Tracker ${formatTrackerId(job.trackerId)}"
+                )
             }
         }
     }
@@ -427,7 +431,7 @@ private fun TrackerSummaryCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Tracker ${formatTrackerId(tracker.trackerId)}", fontWeight = FontWeight.Bold)
+                    Text(tracker.displayName, fontWeight = FontWeight.Bold)
                     Text(
                         tracker.lastSeenAtMs?.let { "Seen ${formatTimestamp(it)}" } ?: "Waiting for the first report",
                         style = MaterialTheme.typography.bodySmall,
@@ -661,15 +665,19 @@ private fun TrackerScreen(state: CatNavAppState) {
             }
         } else {
             items(state.recentJobs.take(15), key = { "job-${it.jobId}" }) { job ->
-                JobRow(job)
+                JobRow(
+                    job,
+                    state.trackers.firstOrNull { it.trackerId == job.trackerId }?.displayName
+                        ?: "Tracker ${formatTrackerId(job.trackerId)}"
+                )
             }
         }
     }
     if (showAddDialog) {
         AddTrackerDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { trackerId ->
-                state.registerTracker(trackerId)
+            onAdd = { trackerId, catName ->
+                state.registerTracker(trackerId, catName)
                 showAddDialog = false
             }
         )
@@ -693,7 +701,7 @@ private fun TrackerListCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = selected, onCheckedChange = onCheckedChange)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Tracker ${formatTrackerId(tracker.trackerId)}", fontWeight = FontWeight.Bold)
+                    Text(tracker.displayName, fontWeight = FontWeight.Bold)
                     Text(
                         tracker.lastSeenAtMs?.let { "Last seen ${formatTimestamp(it)}" } ?: "No recent gateway contact",
                         style = MaterialTheme.typography.bodySmall,
@@ -709,15 +717,16 @@ private fun TrackerListCard(
 }
 
 @Composable
-private fun AddTrackerDialog(onDismiss: () -> Unit, onAdd: (Long) -> Unit) {
+private fun AddTrackerDialog(onDismiss: () -> Unit, onAdd: (Long, String) -> Unit) {
     var trackerIdInput by rememberSaveable { mutableStateOf("") }
+    var catNameInput by rememberSaveable { mutableStateOf("") }
     var validationError by rememberSaveable { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add a tracker") },
         text = {
             Column {
-                Text("Enter the 32-bit tracker ID printed by the tracker firmware.")
+                Text("Enter the tracker ID and a name to identify your cat in CatNav.")
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = trackerIdInput,
@@ -729,7 +738,19 @@ private fun AddTrackerDialog(onDismiss: () -> Unit, onAdd: (Long) -> Unit) {
                     placeholder = { Text("123456789 or 0x075BCD15") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    isError = validationError != null
+                    isError = validationError?.contains("ID") == true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = catNameInput,
+                    onValueChange = {
+                        catNameInput = it.take(40)
+                        validationError = null
+                    },
+                    label = { Text("Cat Name") },
+                    placeholder = { Text("e.g. Luna") },
+                    singleLine = true,
+                    isError = validationError?.contains("name") == true
                 )
                 validationError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -739,10 +760,13 @@ private fun AddTrackerDialog(onDismiss: () -> Unit, onAdd: (Long) -> Unit) {
         confirmButton = {
             Button(onClick = {
                 val id = parseTrackerId(trackerIdInput)
+                val catName = catNameInput.trim()
                 if (id == null) {
                     validationError = "Enter a non-zero 32-bit decimal or hexadecimal ID."
+                } else if (catName.isEmpty()) {
+                    validationError = "Enter a name for your cat."
                 } else {
-                    onAdd(id)
+                    onAdd(id, catName)
                 }
             }) { Text("Register") }
         },
@@ -751,7 +775,7 @@ private fun AddTrackerDialog(onDismiss: () -> Unit, onAdd: (Long) -> Unit) {
 }
 
 @Composable
-private fun JobRow(job: GatewayJob) {
+private fun JobRow(job: GatewayJob, trackerName: String) {
     val statusColor = when (job.status.uppercase()) {
         "COMPLETED" -> Color(0xFFE3F3EB)
         "FAILED", "TIMED_OUT" -> Color(0xFFFFE7DF)
@@ -778,7 +802,7 @@ private fun JobRow(job: GatewayJob) {
             )
             Spacer(Modifier.width(9.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("${job.command} · ${formatTrackerId(job.trackerId)}", fontWeight = FontWeight.SemiBold)
+                Text("${job.command} · $trackerName", fontWeight = FontWeight.SemiBold)
                 Text(
                     jobProgressText(job),
                     style = MaterialTheme.typography.bodySmall,

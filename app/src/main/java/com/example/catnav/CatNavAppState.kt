@@ -131,9 +131,14 @@ class CatNavAppState(context: Context) {
         }
     }
 
-    fun registerTracker(trackerId: Long) {
+    fun registerTracker(trackerId: Long, catName: String) {
         if (trackerId !in 1L..0xFFFF_FFFFL) {
             showMessage("Enter a non-zero 32-bit tracker ID.")
+            return
+        }
+        val normalizedCatName = catName.trim()
+        if (normalizedCatName.isEmpty()) {
+            showMessage("Enter a name for your cat.")
             return
         }
         ioExecutor.execute {
@@ -141,12 +146,15 @@ class CatNavAppState(context: Context) {
                 gateway.registerTracker(trackerId)
                 val local = database.tracker(trackerId)
                 database.upsertTracker(
-                    (local ?: Tracker(trackerId = trackerId)).copy(registered = true)
+                    (local ?: Tracker(trackerId = trackerId)).copy(
+                        catName = normalizedCatName,
+                        registered = true
+                    )
                 )
                 post {
                     selectedTrackerId = trackerId
                     preferences.selectedTrackerId = trackerId
-                    message = "Tracker ${trackerId.toString(16).uppercase()} added."
+                    message = "$normalizedCatName added."
                 }
                 refreshGateway()
             } catch (exception: IOException) {
@@ -162,6 +170,24 @@ class CatNavAppState(context: Context) {
         selectedTrackerId = trackerId
     }
 
+    fun saveTrackerAlias(trackerId: Long, catName: String): Boolean {
+        val normalizedCatName = catName.trim()
+        if (normalizedCatName.isEmpty()) {
+            showMessage("Enter a name for your cat.")
+            return false
+        }
+        val tracker = database.tracker(trackerId)
+        if (tracker == null) {
+            showMessage("Could not find this tracker.")
+            return false
+        }
+        val updated = tracker.copy(catName = normalizedCatName)
+        database.upsertTracker(updated)
+        trackers = trackers.map { if (it.trackerId == trackerId) updated else it }
+        showMessage("Name saved for $normalizedCatName.")
+        return true
+    }
+
     fun queueCommand(trackerId: Long, command: String) {
         val normalizedCommand = command.uppercase()
         if (normalizedCommand !in setOf("WAKE", "SLEEP", "FETCH")) {
@@ -171,7 +197,7 @@ class CatNavAppState(context: Context) {
         ioExecutor.execute {
             try {
                 queueCommandBlocking(trackerId, normalizedCommand)
-                showMessage("$normalizedCommand queued for tracker ${trackerId.toString(16).uppercase()}.")
+                showMessage("$normalizedCommand queued for ${trackerDisplayName(trackerId)}.")
             } catch (exception: IOException) {
                 showMessage(exception.message ?: "Could not queue $normalizedCommand.")
             } catch (exception: IllegalArgumentException) {
@@ -198,7 +224,7 @@ class CatNavAppState(context: Context) {
                     queueCommandBlocking(trackerId, normalizedCommand)
                     queued++
                 } catch (exception: IOException) {
-                    failures.add("${trackerId.toString(16).uppercase()}: ${exception.message}")
+                    failures.add("${trackerDisplayName(trackerId)}: ${exception.message}")
                 }
             }
             val result = buildString {
@@ -383,7 +409,7 @@ class CatNavAppState(context: Context) {
             try {
                 queueCommandBlocking(tracker.trackerId, "FETCH")
             } catch (exception: IOException) {
-                failures.add("${tracker.trackerId.toString(16).uppercase()}: ${exception.message}")
+                failures.add("${tracker.displayName}: ${exception.message}")
             }
         }
         if (failures.isNotEmpty()) showMessage("Automatic FETCH failed for ${failures.joinToString("; ")}")
@@ -395,6 +421,7 @@ class CatNavAppState(context: Context) {
             val local = database.tracker(remote.trackerId)
             val battery = gateway.battery(remote.trackerId)
             remote.copy(
+                catName = local?.catName,
                 batteryMillivolts = battery.millivolts ?: remote.batteryMillivolts ?: local?.batteryMillivolts,
                 lowBatteryLockout = battery.lowBatteryLockout,
                 lastSyncAtMs = local?.lastSyncAtMs,
@@ -431,7 +458,7 @@ class CatNavAppState(context: Context) {
                         syncTrackerBlocking(trackerId)
                         synced.add(trackerId)
                     } catch (exception: IOException) {
-                        errors.add("${trackerId.toString(16).uppercase()}: ${exception.message}")
+                        errors.add("${trackerDisplayName(trackerId)}: ${exception.message}")
                     }
                 }
                 val summary = buildString {
@@ -460,7 +487,9 @@ class CatNavAppState(context: Context) {
     private fun syncTrackerBlocking(trackerId: Long) {
         val localValues = preferences.configuration(trackerId)
         if (!TrackerSettings.validConfiguration(localValues)) {
-            throw GatewayException("Local configuration for tracker ${trackerId.toString(16).uppercase()} is invalid.")
+            throw GatewayException(
+                "Local configuration for ${trackerDisplayName(trackerId)} is invalid."
+            )
         }
 
         val readJob = queueCommandBlocking(trackerId, "GET_CONFIG")
@@ -519,6 +548,9 @@ class CatNavAppState(context: Context) {
     private fun showMessage(value: String) {
         post { message = value }
     }
+
+    private fun trackerDisplayName(trackerId: Long): String =
+        database.tracker(trackerId)?.displayName ?: Tracker(trackerId).displayName
 
     private fun reportJobMonitorError(error: String) {
         if (lastJobMonitorError == error) return

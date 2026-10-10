@@ -21,6 +21,7 @@ object DatabaseXmlTransfer {
         database.trackers().forEach { tracker ->
             serializer.startTag(null, "tracker")
             serializer.attribute(null, "id", tracker.trackerId.toString())
+            tracker.catName?.let { serializer.attribute(null, "catName", it) }
             serializer.attribute(null, "state", tracker.state)
             tracker.batteryMillivolts?.let {
                 serializer.attribute(null, "batteryMillivolts", it.toString())
@@ -72,6 +73,7 @@ object DatabaseXmlTransfer {
                         currentTrackerId = trackerId
                         importedTrackers[trackerId] = Tracker(
                             trackerId = trackerId,
+                            catName = parser.getAttributeValue(null, "catName"),
                             state = "UNKNOWN",
                             registered = false
                         )

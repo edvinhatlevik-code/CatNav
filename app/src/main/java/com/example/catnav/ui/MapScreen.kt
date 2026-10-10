@@ -176,7 +176,7 @@ internal fun MapScreen(state: CatNavAppState) {
                                 state.selectTracker(tracker.trackerId)
                                 selectedPoint = null
                             },
-                            label = { Text(formatTrackerId(tracker.trackerId)) }
+                            label = { Text(tracker.displayName) }
                         )
                     }
                 }

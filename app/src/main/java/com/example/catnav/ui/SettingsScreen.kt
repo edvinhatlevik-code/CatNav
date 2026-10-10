@@ -71,6 +71,12 @@ internal fun SettingsScreen(
         mutableStateOf(state.selectedTrackerId ?: state.trackers.firstOrNull()?.trackerId)
     }
     var configError by rememberSaveable { mutableStateOf<String?>(null) }
+    var aliasError by rememberSaveable { mutableStateOf<String?>(null) }
+    var catNameInput by rememberSaveable(configTrackerId) {
+        mutableStateOf(
+            state.trackers.firstOrNull { it.trackerId == configTrackerId }?.catName.orEmpty()
+        )
+    }
     val formValues = remember(configTrackerId) {
         mutableStateMapOf<Int, String>().apply {
             val saved = configTrackerId?.let(state::localConfiguration).orEmpty()
@@ -249,8 +255,9 @@ internal fun SettingsScreen(
                                 configTrackerId = tracker.trackerId
                                 state.selectTracker(tracker.trackerId)
                                 configError = null
+                                aliasError = null
                             },
-                            label = { Text(formatTrackerId(tracker.trackerId)) }
+                            label = { Text(tracker.displayName) }
                         )
                     }
                 }
@@ -265,6 +272,33 @@ internal fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    OutlinedTextField(
+                        value = catNameInput,
+                        onValueChange = {
+                            catNameInput = it.take(40)
+                            aliasError = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Cat Name") },
+                        singleLine = true,
+                        isError = aliasError != null
+                    )
+                    aliasError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val name = catNameInput.trim()
+                            if (name.isEmpty()) {
+                                aliasError = "Enter a name for your cat."
+                            } else if (state.saveTrackerAlias(tracker.trackerId, name)) {
+                                aliasError = null
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Save Cat Name")
                     }
                 }
                 TrackerSettings.all.forEach { setting ->

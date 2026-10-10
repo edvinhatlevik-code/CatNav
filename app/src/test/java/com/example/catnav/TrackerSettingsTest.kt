@@ -1,5 +1,6 @@
 package com.example.catnav
 
+import com.example.catnav.data.Tracker
 import com.example.catnav.data.TrackerSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +8,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrackerSettingsTest {
+    @Test
+    fun trackerUsesCatNameAsDisplayNameAndFallsBackToItsId() {
+        assertEquals("Luna", Tracker(trackerId = 1L, catName = " Luna ").displayName)
+        assertEquals("Tracker 0x00000001", Tracker(trackerId = 1L).displayName)
+    }
+
     @Test
     fun minuteSettingsConvertToGatewayApiSeconds() {
         val sampleInterval = TrackerSettings.byId(1) ?: error("Missing sample interval setting")

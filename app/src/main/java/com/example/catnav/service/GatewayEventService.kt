@@ -175,7 +175,14 @@ class GatewayEventService : Service() {
     private fun notifyChargeIfNeeded(trackerId: Long, millivolts: Int?, criticalMillivolts: Int?) {
         val tracker = database.tracker(trackerId) ?: return
         if (tracker.chargeNotificationSent) return
-        if (CatNavNotifications.chargeRequest(this, trackerId, millivolts, criticalMillivolts)) {
+        if (CatNavNotifications.chargeRequest(
+                this,
+                trackerId,
+                tracker.displayName,
+                millivolts,
+                criticalMillivolts
+            )
+        ) {
             database.markChargeNotificationSent(trackerId)
         } else {
             Log.w(TAG, "Battery notification permission is not enabled.")

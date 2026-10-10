@@ -15,6 +15,7 @@ class CatNavDatabase(context: Context) :
             """
             CREATE TABLE trackers (
                 tracker_id INTEGER PRIMARY KEY,
+                cat_name TEXT,
                 state TEXT NOT NULL DEFAULT 'UNKNOWN',
                 battery_mv INTEGER,
                 low_battery_lockout INTEGER NOT NULL DEFAULT 0,
@@ -63,11 +64,14 @@ class CatNavDatabase(context: Context) :
         db.execSQL("CREATE INDEX jobs_by_status ON jobs(status, created_at_ms)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("ALTER TABLE trackers ADD COLUMN cat_name TEXT")
+    }
 
     fun upsertTracker(tracker: Tracker) {
         val values = ContentValues().apply {
             put("tracker_id", tracker.trackerId)
+            if (tracker.catName == null) putNull("cat_name") else put("cat_name", tracker.catName)
             put("state", tracker.state)
             putNullable("battery_mv", tracker.batteryMillivolts)
             put("low_battery_lockout", if (tracker.lowBatteryLockout) 1 else 0)
@@ -327,6 +331,7 @@ class CatNavDatabase(context: Context) :
 
     private fun android.database.Cursor.toTracker(): Tracker = Tracker(
         trackerId = getLong(getColumnIndexOrThrow("tracker_id")),
+        catName = getString(getColumnIndexOrThrow("cat_name")),
         state = getString(getColumnIndexOrThrow("state")),
         batteryMillivolts = nullableInt("battery_mv"),
         lowBatteryLockout = getInt(getColumnIndexOrThrow("low_battery_lockout")) != 0,
@@ -369,6 +374,6 @@ class CatNavDatabase(context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "catnav.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
     }
 }

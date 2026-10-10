@@ -49,23 +49,29 @@ object CatNavNotifications {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
 
-    fun chargeRequest(context: Context, trackerId: Long, millivolts: Int?, criticalMillivolts: Int?): Boolean {
+    fun chargeRequest(
+        context: Context,
+        trackerId: Long,
+        trackerName: String,
+        millivolts: Int?,
+        criticalMillivolts: Int?
+    ): Boolean {
         val voltage = millivolts?.let { " Battery: ${it} mV." }.orEmpty()
         val threshold = criticalMillivolts?.let { " Critical: ${it} mV." }.orEmpty()
         return notify(
             context,
             notificationId(trackerId, CHARGE_NOTIFICATION_BASE),
             "Tracker needs charging",
-            "Tracker ${trackerId.toString(16).uppercase()} requested charging.$voltage$threshold"
+            "$trackerName requested charging.$voltage$threshold"
         )
     }
 
-    fun trackerAwake(context: Context, trackerId: Long): Boolean =
+    fun trackerAwake(context: Context, trackerId: Long, trackerName: String): Boolean =
         notify(
             context,
             notificationId(trackerId, WAKE_NOTIFICATION_BASE),
             "Tracker is awake",
-            "Tracker ${trackerId.toString(16).uppercase()} confirmed WAKE."
+            "$trackerName confirmed WAKE."
         )
 
     private fun notify(context: Context, id: Int, title: String, text: String): Boolean {
