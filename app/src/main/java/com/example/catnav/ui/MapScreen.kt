@@ -1,5 +1,6 @@
 package com.example.catnav.ui
 
+import android.content.Context
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,9 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.offline.OfflineManager
+import org.maplibre.android.offline.OfflineRegion
+import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.HeatmapLayer
@@ -95,13 +99,11 @@ private const val ORTHOPHOTO_STYLE_JSON = """
     "orthophoto-tiles": {
       "type": "raster",
       "tiles": [
-        "https://cache.kartverket.no/v1/wmts/1.0.0/nib/default/webmercator/{z}/{y}/{x}.png",
-        "https://opencache.statkart.no/gatekeeper/gk/gk.open_nib_web_mercator_wmts/1.0.0/nib_web_mercator/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg",
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       ],
       "tileSize": 256,
-      "maxzoom": 19,
-      "attribution": "© Kartverket / Norge i bilder / Esri"
+      "maxzoom": 17,
+      "attribution": "© Esri — Source: Esri, Earthstar Geographics"
     }
   },
   "layers": [
@@ -125,6 +127,7 @@ internal fun MapScreen(state: CatNavAppState) {
     var mapLibreInstance by remember { mutableStateOf<MapLibreMap?>(null) }
     var mapStyleInstance by remember { mutableStateOf<Style?>(null) }
 
+    val context = LocalContext.current
     val selectedTracker = state.trackers.firstOrNull { it.trackerId == state.selectedTrackerId }
         ?: state.trackers.firstOrNull()
     val criticalMillivolts = selectedTracker
@@ -234,9 +237,9 @@ internal fun MapScreen(state: CatNavAppState) {
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory = { context ->
-                    MapLibre.getInstance(context)
-                    MapView(context).apply {
+                factory = { ctx ->
+                    MapLibre.getInstance(ctx)
+                    MapView(ctx).apply {
                         onCreate(null)
                         getMapAsync { map ->
                             mapLibreInstance = map
@@ -292,6 +295,7 @@ internal fun MapScreen(state: CatNavAppState) {
                 val map = mapLibreInstance ?: return@LaunchedEffect
                 updateMapData(style, filteredRecords, mode)
                 centerOnLocations(map, filteredRecords)
+                ensureOfflineRegionCached(context, filteredRecords)
             }
 
             Surface(
@@ -301,7 +305,7 @@ internal fun MapScreen(state: CatNavAppState) {
                 shadowElevation = 2.dp
             ) {
                 Text(
-                    "© Kartverket / Norge i bilder / Esri",
+                    "© Esri — Earthstar Geographics",
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF36423E)
@@ -496,6 +500,71 @@ private fun centerOnLocations(map: MapLibreMap, records: List<LocationRecord>) {
     } catch (_: Exception) {
         val latest = records.last()
         map.easeCamera(CameraUpdateFactory.newLatLngZoom(LatLng(latest.latitude, latest.longitude), DEFAULT_MAP_ZOOM))
+    }
+}
+
+private fun ensureOfflineRegionCached(context: Context, records: List<LocationRecord>) {
+    if (records.isEmpty()) return
+    val latitudes = records.map { it.latitude }
+    val longitudes = records.map { it.longitude }
+    val minLat = (latitudes.minOrNull()!! - 0.05).coerceAtLeast(-85.0)
+    val maxLat = (latitudes.maxOrNull()!! + 0.05).coerceAtMost(85.0)
+    val minLon = (longitudes.minOrNull()!! - 0.08).coerceAtLeast(-180.0)
+    val maxLon = (longitudes.maxOrNull()!! + 0.08).coerceAtMost(180.0)
+
+    val bounds = LatLngBounds.Builder()
+        .include(LatLng(maxLat, maxLon))
+        .include(LatLng(minLat, minLon))
+        .build()
+
+    try {
+        val offlineManager = OfflineManager.getInstance(context)
+        val definition = OfflineTilePyramidRegionDefinition(
+            ORTHOPHOTO_STYLE_JSON,
+            bounds,
+            10.0,
+            17.0,
+            context.resources.displayMetrics.density
+        )
+
+        offlineManager.listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {
+            override fun onList(offlineRegions: Array<OfflineRegion>?) {
+                val hasExistingRegion = offlineRegions?.any { region ->
+                    try {
+                        val regDef = region.definition as? OfflineTilePyramidRegionDefinition
+                        val b = regDef?.bounds
+                        b != null && abs(b.latitudeNorth - bounds.latitudeNorth) < 0.02 &&
+                                abs(b.longitudeEast - bounds.longitudeEast) < 0.02
+                    } catch (_: Exception) {
+                        false
+                    }
+                } ?: false
+
+                if (!hasExistingRegion) {
+                    if ((offlineRegions?.size ?: 0) >= 5) {
+                        offlineRegions?.firstOrNull()?.delete(object : OfflineRegion.OfflineRegionDeleteCallback {
+                            override fun onDelete() {}
+                            override fun onError(error: String) {}
+                        })
+                    }
+                    val metadata = "CatNav Local Region".toByteArray(Charsets.UTF_8)
+                    offlineManager.createOfflineRegion(
+                        definition,
+                        metadata,
+                        object : OfflineManager.CreateOfflineRegionCallback {
+                            override fun onCreate(offlineRegion: OfflineRegion) {
+                                offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
+                            }
+                            override fun onError(error: String) {}
+                        }
+                    )
+                }
+            }
+
+            override fun onError(error: String) {}
+        })
+    } catch (_: Exception) {
+        // Fall back to automatic ambient caching
     }
 }
 
