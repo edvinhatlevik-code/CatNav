@@ -190,7 +190,7 @@ class CatNavAppState(context: Context) {
 
     fun queueCommand(trackerId: Long, command: String) {
         val normalizedCommand = command.uppercase()
-        if (normalizedCommand !in setOf("WAKE", "SLEEP", "FETCH")) {
+        if (normalizedCommand !in setOf("WAKE", "SLEEP", "POWER_SAVE", "FETCH")) {
             showMessage("Choose a supported tracker action.")
             return
         }
@@ -212,7 +212,7 @@ class CatNavAppState(context: Context) {
             showMessage("Select at least one tracker first.")
             return
         }
-        if (normalizedCommand !in setOf("WAKE", "SLEEP", "FETCH")) {
+        if (normalizedCommand !in setOf("WAKE", "SLEEP", "POWER_SAVE", "FETCH")) {
             showMessage("Choose a supported tracker action.")
             return
         }
@@ -422,6 +422,11 @@ class CatNavAppState(context: Context) {
             val battery = gateway.battery(remote.trackerId)
             remote.copy(
                 catName = local?.catName,
+                state = if (remote.state == "DORMANT" && local?.state == "POWER_SAVING") {
+                    "POWER_SAVING"
+                } else {
+                    remote.state
+                },
                 batteryMillivolts = battery.millivolts ?: remote.batteryMillivolts ?: local?.batteryMillivolts,
                 lowBatteryLockout = battery.lowBatteryLockout,
                 lastSyncAtMs = local?.lastSyncAtMs,

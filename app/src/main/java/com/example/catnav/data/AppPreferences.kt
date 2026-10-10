@@ -50,7 +50,12 @@ class AppPreferences(context: Context) {
 
     fun configuration(trackerId: Long): Map<Int, Long> = TrackerSettings.all.associate { setting ->
         val key = configKey(trackerId, setting.id)
-        setting.id to preferences.getLong(key, setting.defaultApiValue)
+        val value = if (preferences.contains(key)) {
+            preferences.getLong(key, setting.defaultApiValue)
+        } else {
+            migratedConfigurationValue(trackerId, setting.id) ?: setting.defaultApiValue
+        }
+        setting.id to value
     }
 
     fun saveConfiguration(trackerId: Long, values: Map<Int, Long>) {
@@ -60,7 +65,25 @@ class AppPreferences(context: Context) {
     }
 
     private fun configKey(trackerId: Long, settingId: Int): String =
-        "tracker_config_${trackerId}_$settingId"
+        "tracker_config_v1_${trackerId}_$settingId"
+
+    private fun migratedConfigurationValue(trackerId: Long, settingId: Int): Long? {
+        val (oldSettingId, divisor) = when (settingId) {
+            1 -> 1 to 60L
+            2 -> 3 to 1L
+            4 -> 5 to 1L
+            5 -> 6 to 1L
+            6 -> 7 to 1L
+            7 -> 8 to 60L
+            8 -> 9 to 1L
+            else -> return null
+        }
+        val oldKey = "tracker_config_${trackerId}_$oldSettingId"
+        if (!preferences.contains(oldKey)) return null
+        val oldValue = preferences.getLong(oldKey, 0L)
+        if (oldValue % divisor != 0L) return null
+        return oldValue / divisor
+    }
 
     companion object {
         const val DEFAULT_GATEWAY_URL = "http://cat-gateway.local"

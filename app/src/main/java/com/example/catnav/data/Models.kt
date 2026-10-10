@@ -66,40 +66,35 @@ data class TrackerSetting(
     val unit: String,
     val minimum: Long,
     val maximum: Long,
-    val defaultApiValue: Long,
-    val apiSecondsPerDisplayUnit: Long = 1L
+    val defaultApiValue: Long
 ) {
-    fun displayValue(apiValue: Long): Long = apiValue / apiSecondsPerDisplayUnit
+    fun displayValue(apiValue: Long): Long = apiValue
 
-    fun apiValue(displayValue: Long): Long = displayValue * apiSecondsPerDisplayUnit
+    fun apiValue(displayValue: Long): Long = displayValue
 }
 
 object TrackerSettings {
     val all = listOf(
-        TrackerSetting(1, "sampleInterval", "Sample interval", "min", 1, 127, 60, 60),
-        TrackerSetting(2, "autoSleep", "Auto-sleep after inactivity", "min", 1, 127, 1_800, 60),
-        TrackerSetting(3, "gpsTimeout", "GPS standby wake timeout", "sec", 5, 120, 45),
-        TrackerSetting(4, "batteryInterval", "Battery check interval", "min", 1, 255, 3_600, 60),
-        TrackerSetting(5, "distanceThreshold", "Minimum movement", "m", 0, 127, 20),
-        TrackerSetting(6, "criticalBattery", "Critical battery voltage", "mV", 3_000, 4_200, 3_300),
-        TrackerSetting(7, "txPower", "Transmit power", "dBm", 2, 10, 10),
-        TrackerSetting(8, "dormantSleep", "Dormant radio-off interval", "min", 1, 59, 900, 60),
-        TrackerSetting(9, "radioListen", "Dormant listen window", "sec", 3, 30, 6)
+        TrackerSetting(1, "sampleInterval", "Sample interval", "min", 1, 127, 1),
+        TrackerSetting(2, "gpsTimeout", "GPS timeout", "sec", 5, 120, 45),
+        TrackerSetting(4, "distanceThreshold", "Distance threshold", "m", 0, 127, 20),
+        TrackerSetting(5, "criticalBattery", "Critical battery voltage", "mV", 3_000, 4_200, 3_300),
+        TrackerSetting(6, "txPower", "Transmit power", "dBm", 2, 10, 10),
+        TrackerSetting(7, "dormantSleep", "Dormant sleep interval", "min", 1, 59, 15),
+        TrackerSetting(8, "radioListen", "Radio listen window", "sec", 3, 30, 6),
+        TrackerSetting(9, "gpsColdStartTimeout", "GPS cold-start timeout", "sec", 5, 255, 255)
     )
 
     fun byId(id: Int): TrackerSetting? = all.firstOrNull { it.id == id }
 
     fun validConfiguration(values: Map<Int, Long>): Boolean {
+        if (values.keys.any { byId(it) == null }) return false
         for (setting in all) {
             val apiValue = values[setting.id] ?: setting.defaultApiValue
-            val displayValue = setting.displayValue(apiValue)
-            if (displayValue !in setting.minimum..setting.maximum) return false
-            if (setting.apiSecondsPerDisplayUnit > 1 && apiValue % setting.apiSecondsPerDisplayUnit != 0L) {
-                return false
-            }
+            if (apiValue !in setting.minimum..setting.maximum) return false
         }
-        val dormantSeconds = values[8] ?: 900L
-        val listenSeconds = values[9] ?: 6L
+        val dormantSeconds = (values[7] ?: 15L) * 60L
+        val listenSeconds = values[8] ?: 6L
         return listenSeconds < dormantSeconds
     }
 }

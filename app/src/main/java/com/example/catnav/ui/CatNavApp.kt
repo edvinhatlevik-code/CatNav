@@ -213,7 +213,7 @@ private fun HomeScreen(
 ) {
     val selected = state.trackers.firstOrNull { it.trackerId == state.selectedTrackerId }
         ?: state.trackers.firstOrNull()
-    val critical = selected?.let { state.localConfiguration(it.trackerId)[6]?.toInt() } ?: 3_300
+    val critical = selected?.let { state.localConfiguration(it.trackerId)[5]?.toInt() } ?: 3_300
     val locations = state.locationsFor(selected?.trackerId)
     val latest = locations.lastOrNull()
     val activeCount = state.trackers.count { it.isActive }
@@ -296,6 +296,7 @@ private fun HomeScreen(
                     onWake = { state.queueCommand(selected.trackerId, "WAKE") },
                     onFetch = { state.queueCommand(selected.trackerId, "FETCH") },
                     onSleep = { state.queueCommand(selected.trackerId, "SLEEP") },
+                    onPowerSave = { state.queueCommand(selected.trackerId, "POWER_SAVE") },
                     enabled = selected.registered
                 )
             }
@@ -483,23 +484,33 @@ private fun TrackerActions(
     onWake: () -> Unit,
     onFetch: () -> Unit,
     onSleep: () -> Unit,
+    onPowerSave: () -> Unit,
     enabled: Boolean = true
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        FilledTonalButton(onClick = onWake, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
-            Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Wake")
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            FilledTonalButton(onClick = onWake, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Wake")
+            }
+            Button(onClick = onFetch, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Fetch")
+            }
         }
-        Button(onClick = onFetch, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
-            Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Fetch")
-        }
-        OutlinedButton(onClick = onSleep, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
-            Icon(Icons.Filled.Bedtime, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Sleep")
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            OutlinedButton(onClick = onSleep, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Filled.Bedtime, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Sleep")
+            }
+            OutlinedButton(onClick = onPowerSave, enabled = enabled, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Filled.BatteryStd, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Power save")
+            }
         }
     }
 }
@@ -510,6 +521,8 @@ internal fun TrackerStatePill(tracker: Tracker) {
         !tracker.registered -> Triple("Local only", Color(0xFFEDEFF4), Color(0xFF626B78))
         tracker.lowBatteryLockout -> Triple("Low battery", Color(0xFFFFE7DF), Color(0xFFA64027))
         tracker.isActive -> Triple("Active", Color(0xFFE2F3EA), Color(0xFF267B59))
+        tracker.state.equals("POWER_SAVING", ignoreCase = true) ->
+            Triple("Power saving", Color(0xFFE2F3EA), Color(0xFF267B59))
         tracker.state.equals("DORMANT", ignoreCase = true) -> Triple("Dormant", Color(0xFFEDEFF4), Color(0xFF626B78))
         else -> Triple(tracker.state.lowercase().replaceFirstChar { it.titlecase() }, Color(0xFFF0F2F1), Color(0xFF68736F))
     }
@@ -631,7 +644,7 @@ private fun TrackerScreen(state: CatNavAppState) {
                 TrackerListCard(
                     tracker = tracker,
                     selected = tracker.trackerId in selectedIds,
-                    criticalMillivolts = state.localConfiguration(tracker.trackerId)[6]?.toInt() ?: 3_300,
+                    criticalMillivolts = state.localConfiguration(tracker.trackerId)[5]?.toInt() ?: 3_300,
                     onCheckedChange = { checked ->
                         selectedIds = if (checked) selectedIds + tracker.trackerId else selectedIds - tracker.trackerId
                     },
@@ -646,6 +659,7 @@ private fun TrackerScreen(state: CatNavAppState) {
                     onWake = { state.queueBulkCommand(selectedIds.toList(), "WAKE") },
                     onFetch = { state.queueBulkCommand(selectedIds.toList(), "FETCH") },
                     onSleep = { state.queueBulkCommand(selectedIds.toList(), "SLEEP") },
+                    onPowerSave = { state.queueBulkCommand(selectedIds.toList(), "POWER_SAVE") },
                     enabled = state.trackers.any { it.trackerId in selectedIds && it.registered }
                 )
             }

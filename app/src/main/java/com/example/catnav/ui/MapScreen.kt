@@ -131,7 +131,7 @@ internal fun MapScreen(state: CatNavAppState) {
     val selectedTracker = state.trackers.firstOrNull { it.trackerId == state.selectedTrackerId }
         ?: state.trackers.firstOrNull()
     val criticalMillivolts = selectedTracker
-        ?.let { state.localConfiguration(it.trackerId)[6]?.toInt() }
+        ?.let { state.localConfiguration(it.trackerId)[5]?.toInt() }
         ?: 3_300
     val allRecords = state.locationsFor(selectedTracker?.trackerId)
     val range = TimeRange.valueOf(selectedRange)

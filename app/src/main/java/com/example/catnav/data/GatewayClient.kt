@@ -60,7 +60,7 @@ class GatewayClient(private val preferences: AppPreferences) {
         value: Long? = null
     ): GatewayJob {
         val normalizedCommand = command.uppercase()
-        require(normalizedCommand in setOf("WAKE", "SLEEP", "FETCH", "GET_CONFIG", "SET_CONFIG")) {
+        require(normalizedCommand in setOf("WAKE", "SLEEP", "POWER_SAVE", "FETCH", "GET_CONFIG", "SET_CONFIG")) {
             "Unsupported tracker command."
         }
         val request = JSONObject().put("trackerId", trackerId).put("command", normalizedCommand)
@@ -110,28 +110,14 @@ class GatewayClient(private val preferences: AppPreferences) {
 
     fun configSnapshot(trackerId: Long): Map<Int, Long> {
         val root = requestJson("$API_PREFIX/trackers/$trackerId/config")
-        val reported = root.optJSONObject("reported")
-            ?: root.optJSONObject("current")
-            ?: root.optJSONObject("runtime")
-            ?: root.optJSONObject("runtimeConfig")
-            ?: root.optJSONObject("latest")
-            ?: root.optJSONObject("latestConfig")
-            ?: root.optJSONObject("received")
-            ?: root.optJSONObject("configuration")
-            ?: root.optJSONObject("config")
-            ?: root
+        val reported = root.optJSONObject("config") ?: root
         val values = mutableMapOf<Int, Long>()
         for (setting in TrackerSettings.all) {
             for (alias in settingAliases(setting.id)) {
                 if (!reported.has(alias) || reported.isNull(alias)) continue
                 val rawValue = reported.optLong(alias, Long.MIN_VALUE)
                 if (rawValue == Long.MIN_VALUE) continue
-                val wireMinutes = alias.contains("minutes", ignoreCase = true)
-                values[setting.id] = if (wireMinutes && setting.apiSecondsPerDisplayUnit > 1L) {
-                    rawValue * setting.apiSecondsPerDisplayUnit
-                } else {
-                    rawValue
-                }
+                values[setting.id] = rawValue
                 break
             }
         }
@@ -144,7 +130,7 @@ class GatewayClient(private val preferences: AppPreferences) {
         }
         val responseCode = connection.responseCode
         if (responseCode !in 200..299) {
-            val message = readError(connection)
+            val message = apiErrorMessage(readError(connection))
             connection.disconnect()
             throw GatewayException("Gateway returned HTTP $responseCode: $message")
         }
@@ -187,7 +173,9 @@ class GatewayClient(private val preferences: AppPreferences) {
                 readError(connection)
             }
             if (responseCode !in 200..299) {
-                throw GatewayException("Gateway returned HTTP $responseCode: ${responseBody.take(MAX_ERROR_CHARS)}")
+                throw GatewayException(
+                    "Gateway returned HTTP $responseCode: ${apiErrorMessage(responseBody).take(MAX_ERROR_CHARS)}"
+                )
             }
             return if (responseBody.isBlank()) {
                 JSONObject()
@@ -242,12 +230,21 @@ class GatewayClient(private val preferences: AppPreferences) {
             ?.use { it.readText() }
             .orEmpty()
 
+    private fun apiErrorMessage(responseBody: String): String {
+        if (responseBody.isBlank()) return "No error details were provided."
+        return try {
+            JSONObject(responseBody).optString("error", "").ifBlank { responseBody }
+        } catch (_: JSONException) {
+            responseBody
+        }
+    }
+
     private fun JSONObject.toTracker(): Tracker {
         val batteryObject = optJSONObject("battery")
         return Tracker(
             trackerId = firstLong("trackerId", "tracker_id", "id")
                 ?: throw IOException("Gateway returned a tracker without an ID."),
-            state = firstString("state", "trackerState", "status")?.uppercase() ?: "UNKNOWN",
+            state = trackerMode(),
             batteryMillivolts = firstInt("batteryMillivolts", "battery_mv", "millivolts")
                 ?: batteryObject?.firstInt("batteryMillivolts", "millivolts", "battery_mv"),
             lowBatteryLockout = firstBoolean("lowBatteryLockout", "low_battery_lockout", "lowBattery")
@@ -255,8 +252,11 @@ class GatewayClient(private val preferences: AppPreferences) {
                 ?: false,
             rssi = firstInt("rssi", "latestRssi"),
             snr = firstDouble("snr", "latestSnr"),
-            lastSeenAtMs = firstLong("lastSeenAt", "lastSeen", "last_seen", "lastSeenEpoch")
-                ?.toEpochMillis(),
+            lastSeenAtMs = firstLong("lastSeenUnix")
+                ?.takeIf { it > 0L }
+                ?.times(1_000L)
+                ?: firstLong("lastSeenAt", "lastSeen", "last_seen", "lastSeenEpoch")
+                    ?.toEpochMillis(),
             registered = true
         )
     }
@@ -267,8 +267,15 @@ class GatewayClient(private val preferences: AppPreferences) {
         val utcSeconds = firstLong("utcSeconds", "utc_seconds", "timestampSeconds") ?: 0L
         val latitude = coordinateE7("latitudeE7", "latitude_e7", "latitude")
         val longitude = coordinateE7("longitudeE7", "longitude_e7", "longitude")
-        val receivedAt = firstLong("receivedAt", "received_at", "receivedAtMs")
-            ?.toEpochMillis() ?: System.currentTimeMillis()
+        val receivedAt = firstLong("lastReceivedUnix")
+            ?.takeIf { it > 0L }
+            ?.times(1_000L)
+            ?: firstLong("firstReceivedUnix")
+                ?.takeIf { it > 0L }
+                ?.times(1_000L)
+            ?: firstLong("receivedAt", "received_at", "receivedAtMs")
+                ?.toEpochMillis()
+            ?: System.currentTimeMillis()
         if (latitude !in -900_000_000..900_000_000 || longitude !in -1_800_000_000..1_800_000_000) {
             throw IOException("Gateway returned an invalid location for tracker $trackerId.")
         }
@@ -315,16 +322,33 @@ class GatewayClient(private val preferences: AppPreferences) {
     private fun Long.toEpochMillis(): Long = if (this < 10_000_000_000L) this * 1_000L else this
 
     private fun settingAliases(id: Int): List<String> = when (id) {
-        1 -> listOf("sampleIntervalSeconds", "sample_interval_seconds", "sampleIntervalMinutes", "sample_interval_minutes", "sampleInterval")
-        2 -> listOf("autoSleepSeconds", "auto_sleep_seconds", "autoSleepMinutes", "auto_sleep_minutes", "autoSleep")
-        3 -> listOf("gpsTimeoutSeconds", "gps_timeout_seconds", "gpsTimeout")
-        4 -> listOf("batteryIntervalSeconds", "battery_interval_seconds", "batteryIntervalMinutes", "battery_interval_minutes", "batteryInterval")
-        5 -> listOf("distanceThresholdMeters", "distance_threshold_meters", "distanceThreshold")
-        6 -> listOf("criticalBatteryMillivolts", "critical_battery_millivolts", "criticalBattery")
-        7 -> listOf("txPowerDbm", "tx_power_dbm", "txPower")
-        8 -> listOf("dormantSleepSeconds", "dormant_sleep_seconds", "dormantSleepMinutes", "dormant_sleep_minutes", "dormantSleep")
-        9 -> listOf("radioListenSeconds", "radio_listen_seconds", "radioListen")
+        1 -> listOf("sampleIntervalMinutes", "sample_interval_minutes")
+        2 -> listOf("gpsTimeoutSeconds", "gps_timeout_seconds")
+        4 -> listOf("distanceThresholdMeters", "distance_threshold_meters")
+        5 -> listOf("criticalBatteryMillivolts", "critical_battery_millivolts")
+        6 -> listOf("txPowerDbm", "tx_power_dbm")
+        7 -> listOf("dormantSleepMinutes", "dormant_sleep_minutes")
+        8 -> listOf("radioListenSeconds", "radio_listen_seconds")
+        9 -> listOf("gpsColdStartTimeoutSeconds", "gps_cold_start_timeout_seconds")
         else -> emptyList()
+    }
+
+    private fun JSONObject.trackerMode(): String {
+        when (val mode = opt("activeMode")) {
+            is Boolean -> return if (mode) "ACTIVE" else "DORMANT"
+            is Number -> return when (mode.toInt()) {
+                0 -> "DORMANT"
+                1 -> "ACTIVE"
+                else -> mode.toString().uppercase()
+            }
+            is String -> when (mode.trim().uppercase()) {
+                "TRUE", "1" -> return "ACTIVE"
+                "FALSE", "0" -> return "DORMANT"
+                "POWER_SAVE", "POWER SAVING" -> return "POWER_SAVING"
+                else -> if (mode.isNotBlank()) return mode.trim().uppercase()
+            }
+        }
+        return firstString("state", "trackerState", "status")?.uppercase() ?: "UNKNOWN"
     }
 
     private fun JSONObject.arrayOrNull(vararg keys: String): JSONArray? {

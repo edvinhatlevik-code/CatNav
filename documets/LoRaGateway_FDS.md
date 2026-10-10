@@ -90,7 +90,7 @@ previous v5 header format.
 The REST API exposed over Wi-Fi to the Android app must be asynchronous. Radio jobs return promptly with a job ID; their progress is polled independently.
 
 ### 6.1 Functional Requirements
-1. **Command Queuing:** The app can push intent jobs (e.g., `FETCH`, `SET_CONFIG`, `WAKE`, `SLEEP`) to a queue on the gateway.
+1. **Command Queuing:** The app can push intent jobs (e.g., `FETCH`, `SET_CONFIG`, `WAKE`, `SLEEP`, `POWER_SAVE`) to a queue on the gateway.
 2. **Asynchronous Dispatcher:** An independent worker task picks up queued jobs and executes LoRa sequences according to `gateway_protocol.md`, applying the active-response timeout to non-WAKE commands and scheduled retries to WAKE jobs.
 3. **Job Status & State Tracking:** The API must expose job status tracking (e.g., `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `TIMED_OUT`).
 4. **Decoupled Data Retrieval:** Location records, tracker battery status, and runtime configurations must be served directly from the gateway's memory/state, independent of real-time LoRa activity.

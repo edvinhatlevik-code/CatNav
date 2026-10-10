@@ -15,11 +15,25 @@ class TrackerSettingsTest {
     }
 
     @Test
-    fun minuteSettingsConvertToGatewayApiSeconds() {
-        val sampleInterval = TrackerSettings.byId(1) ?: error("Missing sample interval setting")
+    fun powerSavingIsANonActiveTrackerMode() {
+        assertFalse(Tracker(trackerId = 1L, state = "POWER_SAVING").isActive)
+    }
 
-        assertEquals(180, sampleInterval.apiValue(3))
-        assertEquals(3, sampleInterval.displayValue(180))
+    @Test
+    fun gatewayApiValuesUseTheDisplayedUnits() {
+        val sampleInterval = TrackerSettings.byId(1) ?: error("Missing sample interval setting")
+        val dormantSleep = TrackerSettings.byId(7) ?: error("Missing dormant sleep setting")
+
+        assertEquals(3, sampleInterval.apiValue(3))
+        assertEquals(3, sampleInterval.displayValue(3))
+        assertEquals(15, dormantSleep.apiValue(15))
+        assertEquals(15, dormantSleep.displayValue(15))
+    }
+
+    @Test
+    fun settingsMatchTheCurrentGatewayIds() {
+        assertEquals(listOf(1, 2, 4, 5, 6, 7, 8, 9), TrackerSettings.all.map { it.id })
+        assertEquals(null, TrackerSettings.byId(3))
     }
 
     @Test
@@ -30,20 +44,24 @@ class TrackerSettingsTest {
     }
 
     @Test
-    fun dormantListenWindowMustBeShorterThanRadioOffInterval() {
+    fun radioListenWindowAndGpsColdStartUseCurrentRanges() {
         val values = TrackerSettings.all.associate { it.id to it.defaultApiValue }.toMutableMap()
-        values[8] = 60
-        values[9] = 30
+        values[7] = 1
+        values[8] = 30
         assertTrue(TrackerSettings.validConfiguration(values))
 
-        values[9] = 60
+        values[8] = 31
+        assertFalse(TrackerSettings.validConfiguration(values))
+
+        values[8] = 6
+        values[9] = 256
         assertFalse(TrackerSettings.validConfiguration(values))
     }
 
     @Test
-    fun minuteSettingCannotBeSavedWithPartialMinutes() {
+    fun retiredSettingIdCannotBeSaved() {
         val values = TrackerSettings.all.associate { it.id to it.defaultApiValue }.toMutableMap()
-        values[1] = 61
+        values[3] = 45
 
         assertFalse(TrackerSettings.validConfiguration(values))
     }

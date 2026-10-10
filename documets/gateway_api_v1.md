@@ -5,7 +5,7 @@ The gateway exposes an asynchronous HTTP API on the local Wi-Fi network at
 serial monitor. Requests use JSON and must include:
 
 ```http
-Authorization: Bearer <API token>
+Authorization: Bearer <api-token>
 Content-Type: application/json
 ```
 
@@ -57,24 +57,38 @@ the LoRa protocol.
 {"trackerId": 123456789, "command": "FETCH"}
 ```
 
-Supported commands are `WAKE`, `SLEEP`, `FETCH`, `GET_CONFIG`, and
-`SET_CONFIG`. For example:
+Supported commands are `WAKE`, `SLEEP`, `POWER_SAVE`, `FETCH`, `GET_CONFIG`,
+and `SET_CONFIG`. For example:
 
 ```json
-{"trackerId": 123456789, "command": "SET_CONFIG", "settingId": 8, "value": 900}
+{"trackerId": 123456789, "command": "SET_CONFIG", "settingId": 7, "value": 15}
 ```
 
-`SET_CONFIG` uses the setting IDs, value types, and ranges in
-`gateway_protocol.md`. API values for setting IDs 1, 2, 4, and 8 are in
-seconds (and must be whole minutes); the gateway converts them to the protocol's
-minute-valued wire representation. Other API setting values use the units in
-the protocol document. Jobs are processed one at a time. To issue a non-WAKE
-command to a dormant tracker, queue `WAKE` first. The gateway retries `WAKE`
-every 5 seconds for up to 1 hour, subject to its airtime limiter. Non-WAKE
-commands use an active-response timeout of up to 10 seconds; they do not wait
-for a future receive window. If one times out, wait for WAKE to complete, then
-submit the command again. Poll the job endpoint; do not assume `202 Accepted`
-means the radio command completed.
+`SET_CONFIG` takes the API units and ranges below. Setting ID 3 is reserved and
+invalid; values are sent directly in the units shown.
+
+| ID | Setting | API value and range |
+| ---: | --- | --- |
+| 1 | `SAMPLE_INTERVAL_MINUTES` | Minutes, integer 1–127 |
+| 2 | `GPS_TIMEOUT_SECONDS` | Seconds, integer 5–120 |
+| 3 | Reserved (invalid) | Do not use |
+| 4 | `DISTANCE_THRESHOLD_METERS` | Metres, integer 0–127 |
+| 5 | `CRITICAL_BATTERY_MILLIVOLTS` | Millivolts, integer 3000–4200 |
+| 6 | `TX_POWER_DBM` | dBm, integer 2–10 |
+| 7 | `DORMANT_SLEEP_MINUTES` | Minutes, integer 1–59 |
+| 8 | `RADIO_LISTEN_SECONDS` | Seconds, integer 3–30 and less than the dormant interval in seconds |
+| 9 | `GPS_COLD_START_TIMEOUT_SECONDS` | Seconds, integer 5–255 |
+
+Configuration reads return a `config` object with
+`sampleIntervalMinutes`, `gpsTimeoutSeconds`,
+`gpsColdStartTimeoutSeconds`, `distanceThresholdMeters`,
+`criticalBatteryMillivolts`, `txPowerDbm`, `dormantSleepMinutes`, and
+`radioListenSeconds`. They also include a `desiredSettings` array containing
+successfully applied settings.
+
+Jobs are processed one at a time. WAKE and POWER_SAVE retry across dormant
+receive windows; other commands use the active-command timeout. Poll the job
+endpoint; do not assume `202 Accepted` means the radio command completed.
 
 Job status values are `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, and
 `TIMED_OUT`. A completed FETCH can include `partial: true` and a non-zero
@@ -89,8 +103,9 @@ Job status values are `QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, and
 2. Build and upload `heltec_wifi_lora_32_V3`. The USB serial monitor runs at
    115200 baud and reports radio initialization, Wi-Fi status, and tracker IDs.
 3. Register each tracker using its boot-printed ID and the tracker route above.
-4. Queue `WAKE` for a dormant tracker and wait for it to complete before
-   queueing `GET_CONFIG`, `FETCH`, or another command.
+4. Queue `WAKE` for a dormant tracker, or `POWER_SAVE` to request its
+   power-saving mode. Wait for the job to complete before queueing another
+   command.
 
 ### Charge alerts
 
@@ -128,7 +143,7 @@ To queue a FETCH:
 
 ```powershell
 curl.exe -X POST `
-  -H "Authorization: Bearer YOUR_CONFIGURED_TOKEN" `
+  -H "Authorization: Bearer $env:CAT_GATEWAY_TOKEN" `
   -H "Content-Type: application/json" `
   -d '{"trackerId":123456789,"command":"FETCH"}' `
   http://cat-gateway.local/api/v1/jobs

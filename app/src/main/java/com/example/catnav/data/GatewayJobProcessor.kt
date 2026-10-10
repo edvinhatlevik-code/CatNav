@@ -42,6 +42,10 @@ class GatewayJobProcessor(context: Context) {
                 database.setTrackerState(job.trackerId, "DORMANT")
                 true
             }
+            "POWER_SAVE" -> {
+                database.setTrackerState(job.trackerId, "POWER_SAVING")
+                true
+            }
             "FETCH" -> {
                 if (database.tracker(job.trackerId) == null) {
                     database.upsertTracker(Tracker(trackerId = job.trackerId))
